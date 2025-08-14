@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  backend:
+    container_name: backend-local
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - backend-network
+    command: >
+      sh -c "
+      ./wait-for-it.sh db:5432 --timeout=30 &&
+      poetry run alembic upgrade head &&
+      if [ \"$MODE\" = \"LOCAL\" ]; then
+          PGPASSWORD=$DB_PASS psql -h db -U $DB_USER -d $DB_NAME -f fixture/test_data.sql;
+      fi &&
+      poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000
+      "
+
+  db:
+    container_name: postgres-local
+    image: postgis/postgis:16-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend-network
+
+volumes:
+  postgres_data:
+
+networks:
+  backend-network:
+    driver: bridge
